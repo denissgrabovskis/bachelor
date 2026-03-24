@@ -1,396 +1,255 @@
-from __future__ import annotations
-
 import re
-import math
+import os
+import log
 import sqlite3
-import unicodedata
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
-from openpyxl.cell import cell, Cell
+from typing import Any, Dict, List, Iterator
+from openpyxl.cell import Cell
+from collections import defaultdict
 
 from openpyxl.worksheet.worksheet import Worksheet
-from openpyxl import load_workbook
+from openpyxl import load_workbook, Workbook
 
-from dataclasses import dataclass
-from typing import Optional
+import hashlib
+from uuid import uuid4
 
-
-# ----------------------------
-# SQLite schema (hardcoded)
-# ----------------------------
+log.enable()
+log.throttle()
 
 
 SCHEMA_SQL = """
-PRAGMA journal_mode=WAL;
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS materials (
-  id TEXT PRIMARY KEY,
-  brand       TEXT,
-  category    TEXT,
-  quality     TEXT,
-  height_m    REAL,
-  width_m     REAL,
-  length_m    REAL,
-  row         REAL
+    id                   TEXT PRIMARY KEY NOT NULL,
+
+    brand                TEXT,
+    category             TEXT,
+    quality              TEXT,
+
+    height_m             REAL,
+    width_m              REAL,
+    length_m             REAL,
+    
+    file_name            TEXT,
+    sheet_name           TEXT,
+    sheet_name_orderable TEXT,
+    row                  INTEGER
 );
 
-CREATE TABLE IF NOT EXISTS monthly (
-  material_id TEXT NOT NULL,
-  period       TEXT NOT NULL, -- yyyy-mm
-  
-  price_purchase    REAL,
-  price_m3          REAL,
-  price_pcs         REAL,
-  price_m2          REAL,
-  
-  qty_pcs   REAL,
-  qty_m3    REAL,
-  qty_m2    REAL,
-  
-  sold_pcs      REAL,
-  sold_m3       REAL,
-  sold_eur      REAL,
-  
-  received_pcs  REAL,
-  received_m3   REAL,
-  
-  source_file  TEXT,
-  sheet_name   TEXT,
+CREATE TABLE IF NOT EXISTS end_of_month_material_stats (
+    id                   BLOB PRIMARY KEY NOT NULL,
 
-  PRIMARY KEY (material_id, period)
+    material_id          TEXT NOT NULL,
+    year                 INTEGER NOT NULL,
+    month                INTEGER NOT NULL,
+
+    price_purchase       REAL,
+    price_m3             REAL,
+    price_pcs            REAL,
+    price_m2             REAL,
+
+    qty_pcs              REAL,
+    qty_m3               REAL,
+    qty_m2               REAL,
+    qty_eur              REAL,
+    
+    file_name            TEXT,
+    sheet_name           TEXT,
+    sheet_name_orderable TEXT,
+    row                  INTEGER,
+
+    FOREIGN KEY (material_id) REFERENCES materials(id)
 );
 
 CREATE TABLE IF NOT EXISTS sales (
-  material_id   TEXT NOT NULL,
-  period        TEXT NOT NULL,
+    id                   BLOB PRIMARY KEY NOT NULL,
 
-  sale_pcs  REAL,
-  sale_eur  REAL,
+    material_id          TEXT NOT NULL,
+    year                 INTEGER NOT NULL,
+    month                INTEGER NOT NULL,
 
-  PRIMARY KEY (material_id, period)
+    sale_pcs             REAL,
+    sale_m3              REAL,
+    sale_eur             REAL,
+    
+    file_name            TEXT,
+    sheet_name           TEXT,
+    sheet_name_orderable TEXT,
+    row                  INTEGER,
+
+    FOREIGN KEY (material_id) REFERENCES materials(id)
+);
+
+CREATE TABLE IF NOT EXISTS deliveries (
+    id                   BLOB PRIMARY KEY NOT NULL,
+
+    material_id          TEXT NOT NULL,
+    year                 INTEGER NOT NULL,
+    month                INTEGER NOT NULL,
+
+    received_pcs         REAL,
+    received_m3          REAL,
+    
+    file_name            TEXT,
+    sheet_name           TEXT,
+    sheet_name_orderable TEXT,
+    row                  INTEGER,
+
+    FOREIGN KEY (material_id) REFERENCES materials(id)
 );
 """
 
+def read_periods(workbooks: dict[str, Workbook]) -> Iterator[dict[str, int|dict[str, Worksheet]]]:
+    for worksheet in workbooks['text'].worksheets:
+        m = re.fullmatch(r"((0[1-9])|1[0-2])\.((19|20)[0-9]{2})", worksheet.title.strip(' .')) # parses dd.yyyy 01.1900-12.2099
+        if not m:
+            continue
 
-# ----------------------------
-# Small helpers
-# ----------------------------
+        try:
+            with log.prefix(f"parsing {worksheet.title}: "):
+                yield {
+                    "worksheet": {
+                        "text": worksheet,
+                        "formulas": workbooks["formulas"][worksheet.title]
+                    },
+                    "month": int(m.group(1)),
+                    "year": int(m.group(3)),
+                }
+        except Exception as e:
+            log.log(f'Exception raised when parsing: {worksheet.title}')
+            raise e
 
-formulas_workbook = None
-def load_workbook_with_formulas(source):
-    global formulas_workbook
-    formulas_workbook = load_workbook(source, data_only=False)
-    return load_workbook(source, data_only=True)
-def get_formula(cell: Cell):
-    global formulas_workbook
-    return str(formulas_workbook[cell.parent.title][cell.coordinate].value)
+def tryFloat(value, safe = False) -> float:
+    if isinstance(value, float): return value
+    if isinstance(value, int): return float(value)
+
+    try:
+        return float(value.replace(' ', '').replace(',', '.').replace(' ', ''))
+    except Exception as e:
+        if safe:
+            return 0.0
+        else:
+            raise e
 
 def normalize_text(value: Any) -> str:
-    """Uppercase + strip + remove diacritics + compress whitespace."""
     if value is None:
         return ""
     s = str(value).strip()
-    s = re.sub(r"\s+", " ", s)
+    s = re.sub(r"\s+", " ", s) # squish
     return s
 
-
-def parse_latvian_number(value: Any) -> Optional[float]:
-    """
-    Parses:
-      - 0,027
-      - 1 614,94
-      - 1614.94
-      - numeric types
-    Returns None for empty/invalid.
-    """
-    if value is None:
-        return None
-    if isinstance(value, (int, float)) and not (isinstance(value, float) and math.isnan(value)):
-        return float(value)
-
-    s = str(value).strip()
-    if s == "":
-        return None
-
-    s = s.replace(" ", "")  # thousands separators
-    if "," in s and "." not in s:
-        s = s.replace(",", ".")
-    elif "," in s and "." in s:
-        s = s.replace(",", "")  # rare, but safe
-
-    try:
-        return float(s)
-    except ValueError:
-        return None
-
-
-_ALLOWED_EXPR = re.compile(r"^[0-9\.\+\-\*\/\(\) ,]+$")
-
-
-def parse_number_or_expression(value: Any) -> Tuple[Optional[float], Optional[str]]:
-    """
-    For "100+50" returns (150.0, "100+50")
-    For "36" returns (36.0, None)
-    For empty returns (None, None)
-    """
-    if value is None:
-        return None, None
-    if isinstance(value, (int, float)) and not (isinstance(value, float) and math.isnan(value)):
-        return float(value), None
-
-    raw = str(value).strip()
-    if raw == "":
-        return None, None
-
-    expr = raw.replace(" ", "").replace(",", ".")
-    if _ALLOWED_EXPR.match(expr) and any(op in expr for op in "+-*/()"):
-        try:
-            return float(eval(expr, {"__builtins__": {}}, {})), raw
-        except Exception:
-            return None, raw
-
-    return parse_latvian_number(raw), None
-
-
-def parse_period_from_title(sheet_title: str) -> Optional[str]:
-    m = re.fullmatch(r"((0[1-9])|1[0-2])\.((19|20)[0-9]{2})", sheet_title.strip(' .')) # parses dd.yyyy 01.1900-12.2099
-    if not m:
-        return None
-    month = int(m.group(1))
-    year = int(m.group(3))
-    return f"{year:04d}-{month:02d}"
-
-get_headers_template = lambda: {
-    # material table
-    'KVALITĀTE': 'quality',
-    'AUGSTUMS (m)': 'height_m', 'BIEZUMS (m)': 'height_m',
-    'PLATUMS (m)': 'width_m',
-    'GARUMS (m)': 'length_m',
-
-
-    # monthly data
-    'IEPIRKUMA CENA': 'price_purchase',
-    'Cena m3': 'price_m3',
-    'Cena 1 gb': 'price_pcs',
-    'Cena m2': 'price_m2',
-
-    'DAUDZUMS (gb.)': 'qty_pcs',
-    'Kopā m3': 'qty_m3',
-    'Kopa m2': 'qty_m2',
-
-    'PĀRDOTS (gb.)': 'sold_pcs',
-    'PĀRDOTS (€)': 'sold_eur',
-
-    'SAŅEMAM (gb.)': 'received_pcs',
-    'SAŅEMAM (m3)': 'received_m3',
-
-    # ignored
-    'm3 (1 gb)': 'm3_pcs',
-    'm2(1gb)': 'm2_pcs',
-    'ATLIKUMS (gb.)': 'leftovers_pcs', # duplicate of previous month
-    'ATLIKUMS (m3)': 'leftovers_m3', # duplicate of previous month
-    'ATLIKUMS (m2)': 'leftovers_m2', # duplicate of previous month
-    'ATLIKUMS (€)': 'leftovers_eur', # duplicate of previous month
-    'PĀRDOTS (m3)': 'sold_m3', # redundant, difficult to parse
-}
-
-headers_template = None
-def remember_header(worksheet: Worksheet) -> Optional[int]:
-    global headers_template
-    headers_template = get_headers_template()
-    for row_index in range(1, 10):
-        headers = [normalize_text(cell.value) for cell in worksheet[row_index]]
-        if ('KVALITĀTE' not in headers): continue
-
-        if 'AUGSTUMS (m)' in headers:
-            headers_template.pop('BIEZUMS (m)')
-        if 'BIEZUMS (m)' in headers:
-            headers_template.pop('AUGSTUMS (m)')
-
-        headers_template = {
-            field: headers.index(header) if header in headers else None
-            for header, field in headers_template.items()
-        }
-        return row_index
-    return None
-
-def warn(message):
-    print(message) # TODO
-
-def build_brand_for_row_map(worksheet: Worksheet) -> Dict[int, str]:
-    brand_at_row: Dict[int, str] = {}
-
-    for merged_range in worksheet.merged_cells.ranges:
-        if merged_range.min_col != 1 or merged_range.max_col != 1:
-            continue
-
-        brand_value = normalize_text(worksheet.cell(merged_range.min_row, 1).value)
-
-        for row_index in range(merged_range.min_row, merged_range.max_row + 1):
-            brand_at_row[row_index] = brand_value
-
-    return brand_at_row
-
-def tryFloat(value):
-    try:
-        return float(value.replace(',', '.').replace(' ', ''))
-    except:
-        return value
-
-def parse_record(row, brand, category):
-    values = [tryFloat(normalize_text(cell.value)) for cell in row]
-    formulas = [get_formula(cell) for cell in row]
-
-    record = dict()
-    for field, header_col in headers_template.items():
-        if header_col is not None:
-            record[field] = values[header_col]
-            record[field+'_formula'] = formulas[header_col]
-        else:
-            record[field] = None
-            record[field+'_formula'] = None
-    record = type('',(object,),record)() # https://stackoverflow.com/a/29480317
-
-    if not record.height_m or not record.width_m or not record.length_m: return None
-    record.id = f"{brand}|{category}|{record.quality or 'empty'}|{record.height_m:.3f}|{record.width_m:.3f}|{record.length_m:.3f}"
-    record.sold_eur_formula = record.sold_eur_formula if '*' not in record.sold_eur_formula else f'={record.sold_eur}'
-
-    return record
-
-
-def round_dim(x: float) -> float:
-    return float(f"{x:.3f}")
-
-
-def make_id(
-    brand: str,
-    category: str,
-    quality: Optional[str],
-    height_m: float,
-    width_m: float,
-    length_m: float,
-) -> str:
-    # identity includes brand+category as you requested
-    q = normalize_text(quality)
-    b = normalize_text(brand)
-    c = normalize_text(category)
-    h, w, l = round_dim(height_m), round_dim(width_m), round_dim(length_m)
-    return f"{b}|{c}|{q}|{h:.3f}|{w:.3f}|{l:.3f}"
-
-
-def is_totals_row(text_value: str) -> bool:
-    return normalize_text(text_value).startswith("KOPA")  # catches KOPĀ / KOPA / KOPĀ VISS / ...
-
-
-def split_plus_list(raw: str) -> List[str]:
-    """
-    "100+50+ 25" -> ["100", "50", "25"]
-    """
-    raw = raw.replace(" ", "")
-    return [t for t in raw.split("+") if t != ""]
-
-
-# ----------------------------
-# Core parse
-# ----------------------------
-
-def parse_worksheet(
-    worksheet: Worksheet,
-    period: str,
-    workbook_name: str,
-    header_row_index: int,
-) -> Tuple[
-    List[Dict[str, Any]],  # materials upserts
-    List[Dict[str, Any]],  # monthly upserts
-    List[Dict[str, Any]],  # sales_lines upserts
-]:
-    # Read headers from the header row, normalized
-    brands_by_row = build_brand_for_row_map(worksheet)
-
-    materials = dict()
-    materials_rows: List[Dict[str, Any]] = []
-    monthly_rows: List[Dict[str, Any]] = []
-    sales_rows: List[Dict[str, Any]] = []
-
-    current_row = header_row_index
-    while True:
-        current_row+=1
-
-        if current_row not in brands_by_row:
+def worksheet_records(worksheet: dict[str, Worksheet]) -> Iterator[defaultdict[str, str|int|dict[str, str|float|None]]]:
+    for row in range(1, 10):
+        headers = [normalize_text(cell.value) for cell in worksheet['text'][row]]
+        if ('KVALITĀTE' in headers):
             break
+    else:
+        return
+
+    while row < worksheet['text'].max_row:
+        row+=1
+        brand = normalize_text(worksheet['text'][row][0].value) or brand
+
+        while row < worksheet['text'].max_row:
+            category = normalize_text(worksheet['text'][row][1].value)
+            if category: break
+            row+=1
         else:
-            current_brand = brands_by_row[current_row]
+            break
 
-        current_category = normalize_text(worksheet[current_row][1].value)
+        if 'KOPĀ VISS' in category: break
+        if 'KOPĀ' in category: continue
 
-        while True:
-            current_row += 1
-            if (worksheet[current_row][1].value and 'KOPĀ' in worksheet[current_row][1].value): break
+        while row < worksheet['text'].max_row:
+            row += 1
 
-            record = parse_record(worksheet[current_row], current_brand, current_category)
-            if (record is None): continue
+            record: defaultdict[str, str|dict] = defaultdict(lambda: None)
+            record["brand"] = brand
+            record["category"] = category
+            record["row"] = row
 
-            if record.id in materials:
-                raise ValueError(f"Duplicate material in one sheet: {record.id} (row {current_row}, sheet {worksheet.title})")
-
-            # ---- materials upsert ----
-            materials_rows.append({
-                "id": record.id,
-                "brand": current_brand,
-                "category": current_category,
-                "quality": record.quality,
-                "height_m": record.height_m,
-                "width_m": record.width_m,
-                "length_m": record.length_m,
-                "row": current_row,
-            })
-
-            monthly_rows.append({
-                "material_id": record.id,
-                "period": period,
-
-                "price_purchase": record.price_purchase,
-                "price_m3": record.price_m3,
-                "price_pcs": record.price_pcs,
-                "price_m2": record.price_m2,
-
-                "qty_pcs": record.qty_pcs,
-                "qty_m3": record.qty_m3,
-                "qty_m2": record.qty_m2,
-
-                "sold_pcs": record.sold_pcs,
-                "sold_m3": record.sold_m3,
-                "sold_eur": record.sold_eur,
-
-                "received_pcs": record.received_pcs,
-                "received_m3": record.received_m3,
-
-                "source_file": workbook_name,
-                "sheet_name": worksheet.title,
-            })
-
-            if not record.sold_pcs: continue
+            if (worksheet['text'][row][1].value and 'KOPĀ' in worksheet['text'][row][1].value): break
+            if (not worksheet['text'][row][2].value): continue # empty line
 
 
-            sale_psc = [tryFloat(v) for v in record.sold_pcs_formula[1:].split('+')] if record.sold_pcs_formula else record.sold_pcs
-            sale_eur = [tryFloat(v) for v in record.sold_eur_formula[1:].split('+')] if record.sold_eur_formula else record.sold_eur
-            if (len(sale_psc) != len(sale_eur)):
-                raise ValueError(f'PĀRDOTS (gb.) and PĀRDOTS (€) do not match for record {record.id} from {period}')
-            for pcs, eur in zip(sale_psc, sale_eur):
-                sales_rows.append({
-                    "material_id": record.id,
-                    "period": period,
+            for col, header in enumerate(headers):
+                text_cell: Cell = worksheet['text'][row][col]
+                formula_cell: Cell = worksheet['formulas'][row][col]
 
-                    "sale_pcs": pcs,
-                    "sale_eur": eur,
-                })
+                formula = normalize_text(formula_cell.value)
 
-    return materials_rows, monthly_rows, sales_rows
+                cell = {
+                    "text": normalize_text(text_cell.value),
+                    "formula": formula[1:] if formula.startswith('=') and '+' in formula else None,
+
+                    "float": tryFloat(text_cell.value, True),
+                    "_text_cell": text_cell,
+                }
+                record[header] = cell
+                record[text_cell.coordinate] = cell
+            try:
+                log.log(f'\tparsing {row}')
+                yield record
+            except Exception as e:
+                log.log(f'Exception raised when parsing: {worksheet['text'].title}:{text_cell.coordinate}')
+                raise e
+
+# same ID for repeated materials
+def material_hash(material):
+    data = f"{material['brand']}|{material['category']}|{material['quality']}|{material['height_m']}|{material['width_m']}|{material['length_m']}"
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()
+def uuid():
+    return str(uuid4())
+def equals(left: float, right: float):
+    return round(abs(round(left, 2) - round(right, 2)), 2) <= 0.01
+
+def parse_sales(record):
+    # pcs =1+2+3 (three separate records)
+    # m3  =pcs*m3 (single record)
+    # eur =1+2+3 (three separate records)
+    pcs = record['PĀRDOTS (gb.)']
+    eur = record['PĀRDOTS (€)']
+
+    if pcs['formula'] is not None and eur['formula'] is not None:
+        pcs = [tryFloat(v) for v in pcs['formula'].split('+')]
+        eur = [tryFloat(v) for v in eur['formula'].split('+')]
+
+        m3_per_pc = record['m3 (1 gb)']['float']
+        m3 = [pc*m3_per_pc for pc in pcs]
+
+        assert(equals(sum(m3), record['PĀRDOTS (m3)']['float']))
+        assert(len(pcs) == len(eur))
+
+        return zip(pcs, m3, eur)
+
+    if record['PĀRDOTS (gb.)']['float'] > 0:
+        return ((record['PĀRDOTS (gb.)']['float'], record['PĀRDOTS (m3)']['float'], record['PĀRDOTS (€)']['float']),)
+    else:
+        return []
+def parse_deliveries(record):
+    # pcs =1+2+3 (three separate records)
+    # eur =pcs*price (single record)
+    pcs = record['SAŅEMAM (gb.)']
+
+    if pcs['formula'] is not None:
+        pcs = [tryFloat(v) for v in pcs['formula'].split('+')]
+
+        m3_per_pc = record['m3 (1 gb)']['float']
+        m3 = [pc*m3_per_pc for pc in pcs]
+
+        assert(equals(sum(m3), record['SAŅEMAM (m3)']['float']))
+
+        return zip(pcs, m3)
+
+    if record['SAŅEMAM (gb.)']['float'] > 0:
+        return ((record['SAŅEMAM (gb.)']['float'], record['SAŅEMAM (m3)']['float']),)
+    else:
+        return []
 
 
-# ----------------------------
-# Upserts
-# ----------------------------
+
 
 def upsert_many(connection: sqlite3.Connection, table: str, rows: List[Dict[str, Any]]) -> None:
     if not rows:
@@ -400,52 +259,100 @@ def upsert_many(connection: sqlite3.Connection, table: str, rows: List[Dict[str,
     placeholders = ", ".join(["?"] * len(columns))
     column_list = ", ".join(columns)
 
-    sql = f"INSERT OR REPLACE INTO {table} ({column_list}) VALUES ({placeholders})"
+    sql = f"INSERT INTO {table} ({column_list}) VALUES ({placeholders}) ON CONFLICT(id) DO NOTHING"
     connection.executemany(sql, ([row.get(c) for c in columns] for row in rows))
 
 
-def delete_sales_lines_for(connection: sqlite3.Connection, keys: List[Tuple[str, str]]) -> None:
-    """
-    If a (id, period) already exists, we must delete old sales_lines,
-    otherwise leftover old line_no rows remain.
-    """
-    if not keys:
-        return
-    connection.executemany(
-        "DELETE FROM sales_lines WHERE id = ? AND period = ?",
-        keys
-    )
 
+if os.path.exists('timber.sqlite'):
+    os.remove('timber.sqlite')
 
-
-sources = list(Path("sources").glob("*.xlsx"))
+sources = [p for p in Path("sources").glob("*.xlsx") if not p.name.startswith('~')]
 with sqlite3.connect("timber.sqlite") as db:
     db.executescript(SCHEMA_SQL)
+
     for source in sources:
-        workbook = load_workbook_with_formulas(source)
+        workbooks: dict[str, Workbook] = {"text": load_workbook(source, data_only=True), "formulas": load_workbook(source, data_only=False)}
 
-        for worksheet in workbook.worksheets:
-            period = parse_period_from_title(worksheet.title)
-            if period is None:
-                continue  # per your plan: skip non mm.yyyy sheets
+        for period in read_periods(workbooks):
+            materials = dict()
+            end_of_month_material_stats = list()
+            sales = list()
+            deliveries = list()
+            for record in worksheet_records(period['worksheet']):
+                with_source = lambda data: data | {
+                    "file_name": source.name,
+                    "sheet_name": period['worksheet']['text'].title,
+                    "sheet_name_orderable": f"{period['year']}-{period
+                    ['month']}",
+                    "row": record['row']
+                }
 
-            header_row_index = remember_header(worksheet)
-            if header_row_index is None:
-                warn(f'Worksheet {period} does not have header row')
-                continue
+                material = with_source({
+                    "id": None,
 
-            materials_rows, monthly_rows, sales_rows = parse_worksheet(
-                worksheet=worksheet,
-                period=period,
-                workbook_name=source.name,
-                header_row_index=header_row_index,
-            )
+                    "brand":     record['brand'],
+                    "category":  record['category'],
+                    "quality":   record['KVALITĀTE']['text'],
+
+                    "height_m":  (record['BIEZUMS (m)'] or record['AUGSTUMS (m)'])['text'],
+                    "width_m":   record['PLATUMS (m)']['text'],
+                    "length_m":  record['GARUMS (m)']['text'],
+                })
+                material_id = material_hash(material)
+                material['id'] = material_id
+                materials[material_id] = material
+
+                end_of_month_material_stats.append(with_source({
+                    "id": uuid(),
+
+                    "material_id":    material_id,
+                    "year":           period['year'],
+                    "month":          period['month'],
+
+                    "price_purchase": record['IEPIRKUMA CENA']['text'],
+                    "price_m3":       record['Cena m3']['text'],
+                    "price_pcs":      record['Cena 1 gb']['text'],
+                    "price_m2":       record['Cena m2']['text'],
+
+                    "qty_pcs":        record['ATLIKUMS (gb.)']['text'] if record['ATLIKUMS (gb.)'] is not None else None,
+                    "qty_m3":         record['ATLIKUMS (m3)']['text'] if record['ATLIKUMS (m3)'] is not None else None,
+                    "qty_m2":         record['ATLIKUMS (m2)']['text'] if record['ATLIKUMS (m2)'] is not None else None,
+                    "qty_eur":        record['ATLIKUMS (€)']['text'],
+                }))
+
+
+                for pcs, m3, eur in parse_sales(record):
+                    sales.append(with_source({
+                        "id": uuid(),
+
+                        "material_id":   material_id,
+                        "year":          period['year'],
+                        "month":         period['month'],
+
+                        "sale_pcs":      pcs,
+                        "sale_m3":      m3,
+                        "sale_eur":      eur,
+                    }))
+                for pcs, m3 in parse_deliveries(record):
+                    deliveries.append(with_source({
+                        "id": uuid(),
+
+                        "material_id":   material_id,
+                        "year":          period['year'],
+                        "month":         period['month'],
+
+                        "received_pcs":  pcs,
+                        "received_m3":   m3,
+                    }))
+
+
 
             # Upserts
-            upsert_many(db, "materials", materials_rows)
-            upsert_many(db, "monthly", monthly_rows)
-            upsert_many(db, "sales", sales_rows)
+            upsert_many(db, "materials", list(materials.values()))
+            upsert_many(db, "end_of_month_material_stats", end_of_month_material_stats)
+            upsert_many(db, "sales", sales)
+            upsert_many(db, "deliveries", deliveries)
 
 # TODO: ignore empty lines (see 07.2025)
 # TODO: ignore records about written off sales
-# TODO:
