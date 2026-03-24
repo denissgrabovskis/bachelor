@@ -24,18 +24,18 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS materials (
     id                   TEXT PRIMARY KEY NOT NULL,
 
-    brand                TEXT,
-    category             TEXT,
+    brand                TEXT NOT NULL,
+    category             TEXT NOT NULL,
     quality              TEXT,
 
-    height_m             REAL,
-    width_m              REAL,
-    length_m             REAL,
+    height_m             REAL NOT NULL,
+    width_m              REAL NOT NULL,
+    length_m             REAL NOT NULL,
     
-    file_name            TEXT,
-    sheet_name           TEXT,
-    sheet_name_orderable TEXT,
-    row                  INTEGER
+    file_name            TEXT NOT NULL,
+    sheet_name           TEXT NOT NULL,
+    sheet_name_orderable TEXT NOT NULL,
+    row                  INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS end_of_month_material_stats (
@@ -55,10 +55,10 @@ CREATE TABLE IF NOT EXISTS end_of_month_material_stats (
     qty_m2               REAL,
     qty_eur              REAL,
     
-    file_name            TEXT,
-    sheet_name           TEXT,
-    sheet_name_orderable TEXT,
-    row                  INTEGER,
+    file_name            TEXT NOT NULL,
+    sheet_name           TEXT NOT NULL,
+    sheet_name_orderable TEXT NOT NULL,
+    row                  INTEGER NOT NULL,
 
     FOREIGN KEY (material_id) REFERENCES materials(id)
 );
@@ -70,14 +70,14 @@ CREATE TABLE IF NOT EXISTS sales (
     year                 INTEGER NOT NULL,
     month                INTEGER NOT NULL,
 
-    sale_pcs             REAL,
-    sale_m3              REAL,
-    sale_eur             REAL,
+    sale_pcs             REAL NOT NULL,
+    sale_m3              REAL NOT NULL,
+    sale_eur             REAL NOT NULL,
     
-    file_name            TEXT,
-    sheet_name           TEXT,
-    sheet_name_orderable TEXT,
-    row                  INTEGER,
+    file_name            TEXT NOT NULL,
+    sheet_name           TEXT NOT NULL,
+    sheet_name_orderable TEXT NOT NULL,
+    row                  INTEGER NOT NULL,
 
     FOREIGN KEY (material_id) REFERENCES materials(id)
 );
@@ -89,12 +89,12 @@ CREATE TABLE IF NOT EXISTS deliveries (
     year                 INTEGER NOT NULL,
     month                INTEGER NOT NULL,
 
-    received_pcs         REAL,
-    received_m3          REAL,
+    received_pcs         REAL NOT NULL,
+    received_m3          REAL NOT NULL,
     
-    file_name            TEXT,
-    sheet_name           TEXT,
-    sheet_name_orderable TEXT,
+    file_name            TEXT NOT NULL,
+    sheet_name           TEXT NOT NULL,
+    sheet_name_orderable TEXT NOT NULL,
     row                  INTEGER,
 
     FOREIGN KEY (material_id) REFERENCES materials(id)
@@ -133,68 +133,135 @@ def tryFloat(value, safe = False) -> float:
         else:
             raise e
 
-def normalize_text(value: Any) -> str:
+def normalize_text(value: Any) -> str|None:
     if value is None:
-        return ""
+        return None
     s = str(value).strip()
     s = re.sub(r"\s+", " ", s) # squish
     return s
 
+def handle_special_cases(row: Any, category: str = None, brand: str = None, worksheet: dict[str, Worksheet] = None):
+    # a bunch of hardcoded special rules
+    if category is None:
+        record = row
+        if record['IEPIRKUMA CENA']['text'] == 'Daniil':
+            record['IEPIRKUMA CENA']['text'] = 0
+
+        if record.get('BIEZUMS (m)') is None:
+             record['BIEZUMS (m)'] = record['AUGSTUMS (m)']
+        if record['AUGSTUMS (m)'] is None:
+             record['AUGSTUMS (m)'] = record['BIEZUMS (m)']
+
+        if record.get('ATLIKUMS (gb.)') is None:
+            if (record.get('IEPRIEKŠĒJAIS ATLIKUMS (gb.)')):
+                record['ATLIKUMS (gb.)'] = record['IEPRIEKŠĒJAIS ATLIKUMS (gb.)']
+            else:
+                record['ATLIKUMS (gb.)'] = {"text": None}
+        if record.get('ATLIKUMS (m3)') is None:
+            record['ATLIKUMS (m3)'] = {"text": None}
+        if record.get('ATLIKUMS (m2)') is None:
+            record['ATLIKUMS (m2)'] = {"text": None}
+
+        return record
+    else:
+        if brand == 'Buvnieks' and category == 'Zāģmateriali' and worksheet['text'].title in ('07.2025.', '08.2025.', '09.2025.', '10.2025.', '11.2025.'):
+            category = 'NEĒVELĒTI'
+        if brand == 'KARTEX WOOD':
+            brand = 'KARTEX'
+        return row, category, brand
+
+
+
+
+
 def worksheet_records(worksheet: dict[str, Worksheet]) -> Iterator[defaultdict[str, str|int|dict[str, str|float|None]]]:
     for row in range(1, 10):
-        headers = [normalize_text(cell.value) for cell in worksheet['text'][row]]
+        headers = [normalize_text(cell.value or '') for cell in worksheet['text'][row]]
         if ('KVALITĀTE' in headers):
             break
     else:
         return
 
-    while row < worksheet['text'].max_row:
-        row+=1
-        brand = normalize_text(worksheet['text'][row][0].value) or brand
 
-        while row < worksheet['text'].max_row:
-            category = normalize_text(worksheet['text'][row][1].value)
-            if category: break
-            row+=1
-        else:
-            break
+    def until_last_row(f):
+        nonlocal row, worksheet
+        def wrap():
+            nonlocal row, worksheet
+            while True:
+                if row >= worksheet['text'].max_row: break
 
-        if 'KOPĀ VISS' in category: break
-        if 'KOPĀ' in category: continue
+                item = f()
+                if item == '_break': break
+                if item == '_continue': continue
 
-        while row < worksheet['text'].max_row:
+                yield item
+        return wrap
+
+    @until_last_row
+    def brands():
+        nonlocal row, worksheet
+        row +=1
+        if 'KOPĀ VISS' == normalize_text(worksheet['text'][row][1].value): # last brand ended
+            return '_break'
+        brand = normalize_text(worksheet['text'][row][0].value)
+        return brand or '_break'
+
+    @until_last_row
+    def categories():
+        nonlocal row, worksheet
+        category = normalize_text(worksheet['text'][row][1].value)
+
+        if not category: # something wrong, skip this row (usually, the table is about to end)
             row += 1
+            return '_continue'
+        if 'KOPĀ ' in category:  # last category of the brand ended
+            return '_break'
 
-            record: defaultdict[str, str|dict] = defaultdict(lambda: None)
-            record["brand"] = brand
-            record["category"] = category
-            record["row"] = row
+        return category
 
-            if (worksheet['text'][row][1].value and 'KOPĀ' in worksheet['text'][row][1].value): break
-            if (not worksheet['text'][row][2].value): continue # empty line
+    @until_last_row
+    def rows():
+        nonlocal row, worksheet
+        row +=1
+        if 'KOPĀ' in (worksheet['text'][row][1].value or ''): # last record of the category end
+            row +=1
+            return '_break'
+        return row
 
 
-            for col, header in enumerate(headers):
-                text_cell: Cell = worksheet['text'][row][col]
-                formula_cell: Cell = worksheet['formulas'][row][col]
+    for brand in brands():
+        for category in categories():
+            for row in rows():
+                row, category, brand = handle_special_cases(row, category, brand, worksheet)
 
-                formula = normalize_text(formula_cell.value)
+                record: defaultdict[str, str|dict] = defaultdict(lambda: None)
+                record["brand"] = brand
+                record["category"] = category
+                record["row"] = row
 
-                cell = {
-                    "text": normalize_text(text_cell.value),
-                    "formula": formula[1:] if formula.startswith('=') and '+' in formula else None,
+                if (worksheet['text'][row][1].value and 'KOPĀ' in worksheet['text'][row][1].value): break
+                if (not worksheet['text'][row][2].value): continue # empty line
 
-                    "float": tryFloat(text_cell.value, True),
-                    "_text_cell": text_cell,
-                }
-                record[header] = cell
-                record[text_cell.coordinate] = cell
-            try:
-                log.log(f'\tparsing {row}')
-                yield record
-            except Exception as e:
-                log.log(f'Exception raised when parsing: {worksheet['text'].title}:{text_cell.coordinate}')
-                raise e
+
+                for col, header in enumerate(headers):
+                    text_cell: Cell = worksheet['text'][row][col]
+                    formula_cell: Cell = worksheet['formulas'][row][col]
+
+                    formula = formula_cell.value
+
+                    record[header] = {
+                        "text": normalize_text(text_cell.value),
+                        "formula": formula[1:] if formula is not None and isinstance(formula, str) and formula.startswith('=') and '+' in formula else None,
+
+                        "float": tryFloat(text_cell.value, True),
+                        "_text_cell": text_cell,
+                    }
+                try:
+                    log.log(f'\tparsing {row}')
+                    yield handle_special_cases(record)
+                except Exception as e:
+                    log.log(f'Exception raised when parsing: {worksheet['text'].title}:{text_cell.coordinate}')
+                    raise e
 
 # same ID for repeated materials
 def material_hash(material):
@@ -219,7 +286,8 @@ def parse_sales(record):
         m3_per_pc = record['m3 (1 gb)']['float']
         m3 = [pc*m3_per_pc for pc in pcs]
 
-        assert(equals(sum(m3), record['PĀRDOTS (m3)']['float']))
+        if (not equals(sum(m3), record['PĀRDOTS (m3)']['float'])):
+            log.log('PĀRDOTS (m3) does not match formula')
         assert(len(pcs) == len(eur))
 
         return zip(pcs, m3, eur)
@@ -295,7 +363,7 @@ with sqlite3.connect("timber.sqlite") as db:
                     "category":  record['category'],
                     "quality":   record['KVALITĀTE']['text'],
 
-                    "height_m":  (record['BIEZUMS (m)'] or record['AUGSTUMS (m)'])['text'],
+                    "height_m":  record['BIEZUMS (m)']['text'],
                     "width_m":   record['PLATUMS (m)']['text'],
                     "length_m":  record['GARUMS (m)']['text'],
                 })
@@ -315,9 +383,9 @@ with sqlite3.connect("timber.sqlite") as db:
                     "price_pcs":      record['Cena 1 gb']['text'],
                     "price_m2":       record['Cena m2']['text'],
 
-                    "qty_pcs":        record['ATLIKUMS (gb.)']['text'] if record['ATLIKUMS (gb.)'] is not None else None,
-                    "qty_m3":         record['ATLIKUMS (m3)']['text'] if record['ATLIKUMS (m3)'] is not None else None,
-                    "qty_m2":         record['ATLIKUMS (m2)']['text'] if record['ATLIKUMS (m2)'] is not None else None,
+                    "qty_pcs":        record['ATLIKUMS (gb.)']['text'],
+                    "qty_m3":         record['ATLIKUMS (m3)']['text'],
+                    "qty_m2":         record['ATLIKUMS (m2)']['text'],
                     "qty_eur":        record['ATLIKUMS (€)']['text'],
                 }))
 
