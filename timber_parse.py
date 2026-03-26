@@ -164,10 +164,15 @@ def handle_special_cases(row: Any, category: str = None, brand: str = None, work
 
         return record
     else:
-        if brand == 'Buvnieks' and category == 'Zāģmateriali' and worksheet['text'].title in ('07.2025.', '08.2025.', '09.2025.', '10.2025.', '11.2025.'):
-            category = 'NEĒVELĒTI'
+        if brand == 'BUVNIEKS':
+            if category == 'Zāģmateriali':
+                category = 'NEĒVELĒTI'
+            if category == 'Ēvelēts' or category == 'Ēvelēti':
+                category = 'ĒVELĒTI'
         if brand == 'KARTEX WOOD':
             brand = 'KARTEX'
+        if brand == 'RONDI' and category == 'C24 no Zviedrijas':
+            category = 'C24'
         return row, category, brand
 
 
@@ -182,86 +187,53 @@ def worksheet_records(worksheet: dict[str, Worksheet]) -> Iterator[defaultdict[s
     else:
         return
 
+    brand = None
+    category = None
+    is_start_of_range = lambda cell: hasattr(cell, 'internal_value')
+    while row < worksheet['text'].max_row:
+        row += 1
 
-    def until_last_row(f):
-        nonlocal row, worksheet
-        def wrap():
-            nonlocal row, worksheet
-            while True:
-                if row >= worksheet['text'].max_row: break
+        if 'KOPĀ VISS' in (worksheet['text'][row][1].value or ''): # table end
+            break
 
-                item = f()
-                if item == '_break': break
-                if item == '_continue': continue
+        if (not brand or is_start_of_range(worksheet['text'][row][0])):
+            brand = normalize_text(worksheet['text'][row][0].value or '') # new brand start
 
-                yield item
-        return wrap
+        category = category or worksheet['text'][row][1].value
+        if 'KOPĀ' in (worksheet['text'][row][1].value or ''):
+            category = None # end of category (possibly of the whole brand or the whole table. either way, skipping)
+            continue
 
-    @until_last_row
-    def brands():
-        nonlocal row, worksheet
-        row +=1
-        if 'KOPĀ VISS' == normalize_text(worksheet['text'][row][1].value): # last brand ended
-            return '_break'
-        brand = normalize_text(worksheet['text'][row][0].value)
-        return brand or '_break'
+        if (not worksheet['text'][row][2].value): continue # empty line
 
-    @until_last_row
-    def categories():
-        nonlocal row, worksheet
-        category = normalize_text(worksheet['text'][row][1].value)
+        row, category, brand = handle_special_cases(row, category, brand, worksheet)
 
-        if not category: # something wrong, skip this row (usually, the table is about to end)
-            row += 1
-            return '_continue'
-        if 'KOPĀ ' in category:  # last category of the brand ended
-            return '_break'
-
-        return category
-
-    @until_last_row
-    def rows():
-        nonlocal row, worksheet
-        row +=1
-        if 'KOPĀ' in (worksheet['text'][row][1].value or ''): # last record of the category end
-            row +=1
-            return '_break'
-        return row
+        record: defaultdict[str, str|dict] = defaultdict(lambda: None)
+        record["brand"] = brand
+        record["category"] = category
+        record["row"] = row
 
 
-    for brand in brands():
-        for category in categories():
-            for row in rows():
-                row, category, brand = handle_special_cases(row, category, brand, worksheet)
 
-                record: defaultdict[str, str|dict] = defaultdict(lambda: None)
-                record["brand"] = brand
-                record["category"] = category
-                record["row"] = row
+        for col, header in enumerate(headers):
+            text_cell: Cell = worksheet['text'][row][col]
+            formula_cell: Cell = worksheet['formulas'][row][col]
 
-                if (worksheet['text'][row][1].value and 'KOPĀ' in worksheet['text'][row][1].value): break
-                if (not worksheet['text'][row][2].value): continue # empty line
+            formula = formula_cell.value
 
+            record[header] = {
+                "text": normalize_text(text_cell.value),
+                "formula": formula[1:] if formula is not None and isinstance(formula, str) and formula.startswith('=') and '+' in formula else None,
 
-                for col, header in enumerate(headers):
-                    text_cell: Cell = worksheet['text'][row][col]
-                    formula_cell: Cell = worksheet['formulas'][row][col]
-
-                    formula = formula_cell.value
-
-                    record[header] = {
-                        "text": normalize_text(text_cell.value),
-                        "formula": formula[1:] if formula is not None and isinstance(formula, str) and formula.startswith('=') and '+' in formula else None,
-
-                        "float": tryFloat(text_cell.value, True),
-                        "_text_cell": text_cell,
-                    }
-                try:
-                    log.log(f'\tparsing {row}')
-                    yield handle_special_cases(record)
-                except Exception as e:
-                    log.log(f'Exception raised when parsing: {worksheet['text'].title}:{text_cell.coordinate}')
-                    raise e
+                "float": tryFloat(text_cell.value, True),
+                "_text_cell": text_cell,
+            }
+        try:
+            log.log(f'\tparsing {row}')
+            yield handle_special_cases(record)
+        except Exception as e:
+            log.log(f'Exception raised when parsing: {worksheet['text'].title}:{text_cell.coordinate}')
+            raise e
 
 # same ID for repeated materials
 def material_hash(material):
