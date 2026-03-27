@@ -121,7 +121,7 @@ def read_periods(workbooks: dict[str, Workbook]) -> Iterator[dict[str, int|dict[
             log.log(f'Exception raised when parsing: {worksheet.title}')
             raise e
 
-def tryFloat(value, safe = False) -> float:
+def try_float(value, safe = False) -> float:
     if isinstance(value, float): return value
     if isinstance(value, int): return float(value)
 
@@ -225,7 +225,7 @@ def worksheet_records(worksheet: dict[str, Worksheet]) -> Iterator[defaultdict[s
                 "text": normalize_text(text_cell.value),
                 "formula": formula[1:] if formula is not None and isinstance(formula, str) and formula.startswith('=') and '+' in formula else None,
 
-                "float": tryFloat(text_cell.value, True),
+                "float": try_float(text_cell.value, True),
                 "_text_cell": text_cell,
             }
         try:
@@ -252,8 +252,8 @@ def parse_sales(record):
     eur = record['PĀRDOTS (€)']
 
     if pcs['formula'] is not None and eur['formula'] is not None:
-        pcs = [tryFloat(v) for v in pcs['formula'].split('+')]
-        eur = [tryFloat(v) for v in eur['formula'].split('+')]
+        pcs = [try_float(v) for v in pcs['formula'].split('+')]
+        eur = [try_float(v) for v in eur['formula'].split('+')]
 
         m3_per_pc = record['m3 (1 gb)']['float']
         m3 = [pc*m3_per_pc for pc in pcs]
@@ -274,7 +274,7 @@ def parse_deliveries(record):
     pcs = record['SAŅEMAM (gb.)']
 
     if pcs['formula'] is not None:
-        pcs = [tryFloat(v) for v in pcs['formula'].split('+')]
+        pcs = [try_float(v) for v in pcs['formula'].split('+')]
 
         m3_per_pc = record['m3 (1 gb)']['float']
         m3 = [pc*m3_per_pc for pc in pcs]
