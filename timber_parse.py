@@ -323,8 +323,7 @@ with sqlite3.connect("timber.sqlite") as db:
                 with_source = lambda data: data | {
                     "file_name": source.name,
                     "sheet_name": period['worksheet']['text'].title,
-                    "sheet_name_orderable": f"{period['year']}-{period
-                    ['month']}",
+                    "sheet_name_orderable": f"{period['year']}-{period['month']:02d}",
                     "row": record['row']
                 }
 
