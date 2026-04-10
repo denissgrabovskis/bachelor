@@ -232,7 +232,7 @@ def worksheet_records(worksheet: dict[str, Worksheet]) -> Iterator[defaultdict[s
             log.log(f'\tparsing {row}')
             yield handle_special_cases(record)
         except Exception as e:
-            log.log(f'Exception raised when parsing: {worksheet['text'].title}:{text_cell.coordinate}')
+            log.log(f"Exception raised when parsing: {worksheet['text'].title}:{text_cell.coordinate}")
             raise e
 
 # same ID for repeated materials
