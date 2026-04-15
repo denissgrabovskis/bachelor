@@ -77,7 +77,7 @@ class SalesPredictor(nn.Module):
         self.linear = nn.Linear(HIDDEN_STATE_SIZE + GROUP_EMBEDDING_COUNT, 1)
 
     def forward(self, x: torch.Tensor, groups_ids: torch.Tensor):
-        lstm_output, _ = self.lstm(x) # feed single group
+        lstm_output, _ = self.lstm(x) # feed all samples at once
         lstm_last_timestep_output = lstm_output[:, -1, :] # take last each group sample last timestep all features result
 
         groups_embedding = self.groups_embedding(groups_ids) # retrieve embeddings (when training the groups_ids are constant)
@@ -115,13 +115,11 @@ def train_model(x, groups_ids, y):
 def predict_next_month(
     model,
     group_id,
-    period: pd.DataFrame,
+    periods: pd.DataFrame,
     x_standardize,
     y_unstandardize,
 ):
-    x = period.to_numpy(dtype=np.float32)
-
-    x = x[-TIMESTEP_COUNT:] # the model only reads last 3 months
+    x = periods.to_numpy(dtype=np.float32)[-TIMESTEP_COUNT:] # the model only reads last 3 months
 
     # make it as if there are many timesteps to predict, although there is only one (in other words, wrap the timestep)
     x = x_standardize(x).reshape(1, TIMESTEP_COUNT, x.shape[-1])
@@ -156,8 +154,15 @@ groups_features_by_periods = timber_sqlite.get_groups_with_summed(
                     delta_received_m3 = features["received_m3"].diff().fillna(0.0),
                     rolling_sales_mean_2 = features["sale_m3"].rolling(window=2, min_periods=1).mean(),
                     rolling_sales_mean_3 = features["sale_m3"].rolling(window=3, min_periods=1).mean(),
-                )
-                .select_dtypes(include='number')
+                )[[
+                    "sale_m3",
+                    "received_m3",
+                    "delta_sale_m3",
+                    "delta_received_m3",
+                    "rolling_sales_mean_2",
+                    "rolling_sales_mean_3",
+                ]]
+
         ]
 )
 
@@ -182,7 +187,7 @@ for train_start, train_end, test_month in train_splits:
         prediction = predict_next_month(
             model=model,
             group_id=group_id,
-            period=group_periods[train_start:train_end],
+            periods=group_periods[train_start:train_end],
             x_standardize = lambda x: standardize(x, x_mean, x_std)[0],
             y_unstandardize = lambda y: (y * y_std + y_mean)[0, 0],
         )
