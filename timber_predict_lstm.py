@@ -16,7 +16,6 @@ torch.manual_seed(42)
 
 
 TIMESTEP_COUNT = 3
-FEATURE_COUNT = 6 # TODO: remove
 GROUP_EMBEDDING_COUNT = 4
 HIDDEN_STATE_SIZE = 16
 
@@ -61,7 +60,7 @@ def inverse_transform_target(y_scaled: np.ndarray, mean: np.ndarray, std: np.nda
 # 2. Output + Group Embeddings > Linear Input
 # 3. Linear Input > Linear > Predicted Sales
 class SalesPredictor(nn.Module):
-    def __init__(self, group_count: int):
+    def __init__(self, feature_count: int, group_count: int):
         super().__init__()
 
         self.groups_embedding = nn.Embedding(
@@ -70,7 +69,7 @@ class SalesPredictor(nn.Module):
         )
 
         self.lstm = nn.LSTM(
-            input_size=FEATURE_COUNT,
+            input_size=feature_count,
             hidden_size=HIDDEN_STATE_SIZE,
             batch_first=True, # True - sample>timestep>feature; False - timestep>sample>feature
         )
@@ -93,7 +92,7 @@ def train_model(x, groups_ids, y):
     groups_ids = torch.tensor(groups_ids, dtype=torch.long)
     y = torch.tensor(y, dtype=torch.float32)
 
-    model = SalesPredictor(group_count=len(np.unique(groups_ids)))
+    model = SalesPredictor(feature_count=x.shape[-1], group_count=len(np.unique(groups_ids)))
 
     # reason behind MSELoss and Adam is explained in thesis
     loss_function = nn.MSELoss()
@@ -120,19 +119,16 @@ def predict_next_month(
     x_standardize,
     y_unstandardize,
 ):
-    #period = period.reset_index(drop=True) TODO: remove
-
     x = period.to_numpy(dtype=np.float32)
 
     x = x[-TIMESTEP_COUNT:] # the model only reads last 3 months
 
     # make it as if there are many timesteps to predict, although there is only one (in other words, wrap the timestep)
-    x = x_standardize(x).reshape(1, TIMESTEP_COUNT, FEATURE_COUNT)
+    x = x_standardize(x).reshape(1, TIMESTEP_COUNT, x.shape[-1])
     group_id = np.array([group_id], dtype=np.int64)
 
     x = torch.tensor(x, dtype=torch.float32)
     group_id = torch.tensor(group_id, dtype=torch.long)
-
     model.eval()
     with torch.no_grad():
         prediction = model(x, group_id).cpu().numpy()

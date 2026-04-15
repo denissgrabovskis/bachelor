@@ -4,14 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="559b9d2d-ca4d-4b5d-955f-f9a96c228d74" name="Changes" comment="75%: SES &amp; ARIMA merged">
-      <change afterPath="$PROJECT_DIR$/test.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/timber_predict_traditional.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/timber_sqlite.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/data_source_mapping.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/data_source_mapping.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/sqldialects.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/sqldialects.xml" afterDir="false" />
+    <list default="true" id="559b9d2d-ca4d-4b5d-955f-f9a96c228d74" name="Changes" comment="75%: refactored lstm">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timber_predict.py" beforeDir="false" afterPath="$PROJECT_DIR$/timber_predict_lstm.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/timber_predict_lstm.py" beforeDir="false" afterPath="$PROJECT_DIR$/timber_predict_lstm.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -62,7 +57,7 @@
     "Python.simple_exponential_smoothing.executor": "Run",
     "Python.test.executor": "Run",
     "Python.timber_predict.executor": "Run",
-    "Python.timber_predict_lstm.executor": "Run",
+    "Python.timber_predict_lstm.executor": "Debug",
     "Python.timber_predict_traditional.executor": "Run",
     "Python.timber_sqlite.executor": "Run",
     "Python.timbr_predict.executor": "Run",
@@ -113,7 +108,7 @@
       <workItem from="1776066993889" duration="2789000" />
       <workItem from="1776077071615" duration="6941000" />
       <workItem from="1776162082528" duration="17404000" />
-      <workItem from="1776228366444" duration="14097000" />
+      <workItem from="1776228366444" duration="15365000" />
     </task>
     <task id="LOCAL-00001" summary="75%: cleanup">
       <option name="closed" value="true" />
@@ -155,7 +150,47 @@
       <option name="project" value="LOCAL" />
       <updated>1776077138151</updated>
     </task>
-    <option name="localTasksCounter" value="6" />
+    <task id="LOCAL-00006" summary="75%: sqlite module">
+      <option name="closed" value="true" />
+      <created>1776255745804</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1776255745804</updated>
+    </task>
+    <task id="LOCAL-00007" summary="75%: lstm per chatgpt">
+      <option name="closed" value="true" />
+      <created>1776255782401</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1776255782401</updated>
+    </task>
+    <task id="LOCAL-00008" summary="75%: initial lstm">
+      <option name="closed" value="true" />
+      <created>1776255797819</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1776255797819</updated>
+    </task>
+    <task id="LOCAL-00009" summary="75%: refactored lstm">
+      <option name="closed" value="true" />
+      <created>1776255824469</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1776255824469</updated>
+    </task>
+    <task id="LOCAL-00010" summary="75%: refactored lstm">
+      <option name="closed" value="true" />
+      <created>1776255848810</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1776255848810</updated>
+    </task>
+    <option name="localTasksCounter" value="11" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -178,13 +213,33 @@
     <MESSAGE value="75%: prediction config" />
     <MESSAGE value="75%: ARIMA" />
     <MESSAGE value="75%: SES &amp; ARIMA merged" />
-    <option name="LAST_COMMIT_MESSAGE" value="75%: SES &amp; ARIMA merged" />
+    <MESSAGE value="75%: sqlite module" />
+    <MESSAGE value="75%: lstm per chatgpt" />
+    <MESSAGE value="75%: initial lstm" />
+    <MESSAGE value="75%: refactored lstm" />
+    <option name="LAST_COMMIT_MESSAGE" value="75%: refactored lstm" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/timber_predict_lstm.py</url>
+          <line>126</line>
+          <option name="timeStamp" value="19" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/timber_predict_lstm.py</url>
+          <line>94</line>
+          <option name="timeStamp" value="20" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/praktiska_dala$timber_predict_lstm.coverage" NAME="timber_predict_lstm Coverage Results" MODIFIED="1776254690042" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/praktiska_dala$timber_predict_lstm.coverage" NAME="timber_predict_lstm Coverage Results" MODIFIED="1776256203931" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/praktiska_dala$test.coverage" NAME="test Coverage Results" MODIFIED="1776254740599" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/praktiska_dala$simple_exponential_smoothing.coverage" NAME="simple_exponential_smoothing Coverage Results" MODIFIED="1776068057359" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/praktiska_dala$timber_predict_traditional.coverage" NAME="timber_predict_traditional Coverage Results" MODIFIED="1776250816929" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/praktiska_dala$timber_predict_traditional.coverage" NAME="timber_predict_traditional Coverage Results" MODIFIED="1776255709884" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/praktiska_dala$arima.coverage" NAME="arima Coverage Results" MODIFIED="1776067892905" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/praktiska_dala$timer_predict.coverage" NAME="timer_predict Coverage Results" MODIFIED="1776069703832" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/praktiska_dala$timber_predict.coverage" NAME="timber_predict Coverage Results" MODIFIED="1776087660515" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
