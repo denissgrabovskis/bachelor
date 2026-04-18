@@ -8,6 +8,9 @@ import timber_sqlite
 
 warnings.filterwarnings("ignore")
 
+def naive_predict_next_month(train_series):
+    prediction = float(train_series.iloc[-1])
+    return prediction, dict()
 
 def simple_exponential_smoothing(train_series):
     model = SimpleExpSmoothing(
@@ -66,6 +69,7 @@ def arima_predict_next_month(train_series):
 groups = timber_sqlite.get_groups_with_summed("sales.sale_m3", transform= lambda series, group_name, i: [group_name, series['sale_m3'].astype('float64')])
 train_splits = timber_sqlite.get_train_splits()
 models = {
+    'naive': naive_predict_next_month,
     'SES': simple_exponential_smoothing,
     'ARIMA': arima_predict_next_month,
 }
