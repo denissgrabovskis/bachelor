@@ -100,6 +100,7 @@ for model, predict_next_month in models.items():
                 **meta,
             })
 
-    results_df = pd.DataFrame(results).sort_values(['test_month', 'material_group'])
+    results_df = pd.DataFrame(results).sort_values(['test_month', 'material_group']).round(3)
     print(results_df.to_string(index=False, col_space={'model': 7}), end="\n\n")
-    results_df.round(3).to_excel(f'predictions/{model}.xlsx', index=False)
+    results_df.to_excel(f'predictions/{model}.xlsx', index=False)
+    results_df.to_csv(f'predictions/{model}.csv', index=False)

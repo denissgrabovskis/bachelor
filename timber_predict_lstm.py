@@ -207,8 +207,9 @@ for train_start, train_end, test_month in train_splits:
             "ape": ape,
         })
 
-results_df = pd.DataFrame(results).sort_values(['test_month', 'material_group'])
+results_df = pd.DataFrame(results).sort_values(['test_month', 'material_group']).round(3)
 print(results_df.to_string(index=False, col_space={'model': 7}), end="\n\n")
-results_df.round(3).to_excel(f'predictions/lstm.xlsx', index=False)
+results_df.to_excel(f'predictions/lstm.xlsx', index=False)
+results_df.to_csv(f'predictions/lstm.csv', index=False)
 
 
