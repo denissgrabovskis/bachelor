@@ -4,13 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="559b9d2d-ca4d-4b5d-955f-f9a96c228d74" name="Changes" comment="75%: 17.04.2026 thesis backup">
-      <change afterPath="$PROJECT_DIR$/predictions/ARIMA.xlsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/predictions/LSTM.xlsx" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/predictions/SES.xlsx" afterDir="false" />
+    <list default="true" id="559b9d2d-ca4d-4b5d-955f-f9a96c228d74" name="Changes" comment="75%: 19.04.2026 thesis backup, 6.1 finished">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/predictions/LSTM.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/predictions/LSTM.xlsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/timber_predict_lstm.py" beforeDir="false" afterPath="$PROJECT_DIR$/timber_predict_lstm.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timber_predict_traditional.py" beforeDir="false" afterPath="$PROJECT_DIR$/timber_predict_traditional.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -117,6 +114,7 @@
       <workItem from="1776499377193" duration="6811000" />
       <workItem from="1776514468093" duration="599000" />
       <workItem from="1776520821322" duration="6578000" />
+      <workItem from="1776595299211" duration="8164000" />
     </task>
     <task id="LOCAL-00001" summary="75%: cleanup">
       <option name="closed" value="true" />
@@ -230,7 +228,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776433506736</updated>
     </task>
-    <option name="localTasksCounter" value="15" />
+    <task id="LOCAL-00015" summary="75%: 19.04.2026 thesis backup, 6.1 finished">
+      <option name="closed" value="true" />
+      <created>1776615292216</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1776615292216</updated>
+    </task>
+    <option name="localTasksCounter" value="16" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -260,21 +266,22 @@
     <MESSAGE value="75%: lstm cleanup" />
     <MESSAGE value="75%: 15.04.2026 thesis backup" />
     <MESSAGE value="75%: 17.04.2026 thesis backup" />
-    <option name="LAST_COMMIT_MESSAGE" value="75%: 17.04.2026 thesis backup" />
+    <MESSAGE value="75%: 19.04.2026 thesis backup, 6.1 finished" />
+    <option name="LAST_COMMIT_MESSAGE" value="75%: 19.04.2026 thesis backup, 6.1 finished" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
       <breakpoints>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/timber_predict_lstm.py</url>
-          <line>124</line>
+          <line>135</line>
           <option name="timeStamp" value="19" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/praktiska_dala$timber_predict_lstm.coverage" NAME="timber_predict_lstm Coverage Results" MODIFIED="1776532781582" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/praktiska_dala$timber_predict_lstm.coverage" NAME="timber_predict_lstm Coverage Results" MODIFIED="1776617585782" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/praktiska_dala$test.coverage" NAME="test Coverage Results" MODIFIED="1776254740599" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/praktiska_dala$simple_exponential_smoothing.coverage" NAME="simple_exponential_smoothing Coverage Results" MODIFIED="1776068057359" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/praktiska_dala$timber_predict_traditional.coverage" NAME="timber_predict_traditional Coverage Results" MODIFIED="1776534413779" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />

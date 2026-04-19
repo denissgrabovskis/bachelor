@@ -22,8 +22,10 @@ HIDDEN_STATE_SIZE = 16
 EPOCHS = 400
 LEARNING_RATE = 0.01
 
+AUGMENT_DATA=True
 
-def build_samples(groups_features_by_periods, train_start, train_end):
+
+def build_windows(groups_features_by_periods, train_start, train_end, augment_data=False):
     x = []
     group_ids = []
     y = []
@@ -32,10 +34,24 @@ def build_samples(groups_features_by_periods, train_start, train_end):
         train_periods_df = group_periods.loc[train_start:train_end]
         period_features_np = train_periods_df.to_numpy(dtype=np.float32)
 
+        previous_window = current_window = previous_target = current_target = None
         for i in range(len(period_features_np) - TIMESTEP_COUNT):
-            x.append(period_features_np[i: i+TIMESTEP_COUNT])
+            previous_window = current_window
+            previous_target = current_target
+            current_window = period_features_np[i: i+TIMESTEP_COUNT]
+            current_target = train_periods_df["sale_m3"].iloc[i + TIMESTEP_COUNT]
+
+            if augment_data and previous_window is not None and previous_target is not None:
+                synthetic_x = (previous_window + current_window) / 2.0
+                synthetic_y = (previous_target + current_target) / 2.0
+
+                x.append(synthetic_x)
+                group_ids.append(group_id)
+                y.append(synthetic_y)
+            
+            x.append(current_window)
             group_ids.append(group_id)
-            y.append(train_periods_df["sale_m3"].iloc[i + TIMESTEP_COUNT])
+            y.append(current_target)
 
     x = np.array(x, dtype=np.float32)
     group_ids = np.array(group_ids, dtype=np.int64)
@@ -45,16 +61,11 @@ def build_samples(groups_features_by_periods, train_start, train_end):
 
 def standardize(x: np.ndarray, mean = None, std = None):
     features_axis = (0,1)
-    mean = x.mean(axis=features_axis, keepdims=True) if mean is None else mean # axis=(0,1) collapse/destruct samples, then timesteps, then calculate mean per feature, but keep the dimensions
+    mean = x.mean(axis=features_axis, keepdims=True) if mean is None else mean # axis=(0,1) collapse/destruct windows, then timesteps, then calculate mean per feature, but keep the dimensions
     std = x.std(axis=features_axis, keepdims=True) if std is None else std # standard deviation - how spread out are values - 68% fall under in the range mean+-std
     std[std == 0] = 1.0
 
     return (x - mean) / std, mean, std # after standardization mean becomes 0 and most values (68%) fall in [-1:1] range
-
-
-def inverse_transform_target(y_scaled: np.ndarray, mean: np.ndarray, std: np.ndarray):
-    return y_scaled * std + mean
-
 
 # 1. X > LSTM > Output
 # 2. Output + Group Embeddings > Linear Input
@@ -71,14 +82,14 @@ class SalesPredictor(nn.Module):
         self.lstm = nn.LSTM(
             input_size=feature_count,
             hidden_size=HIDDEN_STATE_SIZE,
-            batch_first=True, # True - sample>timestep>feature; False - timestep>sample>feature
+            batch_first=True, # True - window>timestep>feature; False - timestep>window>feature
         )
 
         self.linear = nn.Linear(HIDDEN_STATE_SIZE + GROUP_EMBEDDING_COUNT, 1)
 
     def forward(self, x: torch.Tensor, groups_ids: torch.Tensor):
-        lstm_output, _ = self.lstm(x) # feed all samples at once
-        lstm_last_timestep_output = lstm_output[:, -1, :] # take last each group sample last timestep all features result
+        lstm_output, _ = self.lstm(x) # feed all windows at once
+        lstm_last_timestep_output = lstm_output[:, -1, :] # take last each group window last timestep all features result
 
         groups_embedding = self.groups_embedding(groups_ids) # retrieve embeddings (when training the groups_ids are constant)
 
@@ -137,9 +148,8 @@ def predict_next_month(
     return prediction
 
 
-# ============================================================
-# Main
-# ============================================================
+
+
 
 train_splits = timber_sqlite.get_train_splits()
 groups_features_by_periods = timber_sqlite.get_groups_with_summed(
@@ -169,10 +179,11 @@ groups_features_by_periods = timber_sqlite.get_groups_with_summed(
 
 results = []
 for train_start, train_end, test_month in train_splits:
-    x, groups_id, y = build_samples(
+    x, groups_id, y = build_windows(
         groups_features_by_periods=groups_features_by_periods,
         train_start=train_start,
         train_end=train_end,
+        augment_data=AUGMENT_DATA
     )
 
     x, x_mean, x_std = standardize(x)
@@ -209,7 +220,8 @@ for train_start, train_end, test_month in train_splits:
 
 results_df = pd.DataFrame(results).sort_values(['test_month', 'material_group']).round(3)
 print(results_df.to_string(index=False, col_space={'model': 7}), end="\n\n")
-results_df.to_excel(f'predictions/lstm.xlsx', index=False)
-results_df.to_csv(f'predictions/lstm.csv', index=False)
+model = 'lstm-augmented' if AUGMENT_DATA else 'lstm'
+results_df.to_excel(f'predictions/{model}.xlsx', index=False)
+results_df.to_csv(f'predictions/{model}.csv', index=False)
 
 
