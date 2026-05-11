@@ -5,6 +5,7 @@ from statsmodels.tsa.holtwinters import SimpleExpSmoothing
 from statsmodels.tsa.arima.model import ARIMA
 
 import timber_sqlite
+from log import save_results
 
 warnings.filterwarnings("ignore")
 
@@ -75,7 +76,7 @@ models = {
 }
 
 
-for model, predict_next_month in models.items():
+for model_name, predict_next_month in models.items():
     results = []
     for material_group, series in groups:
         for train_start, train_end, test_month in train_splits:
@@ -89,7 +90,7 @@ for model, predict_next_month in models.items():
             ape = abs((actual - prediction) / actual) if actual != 0 else None
 
             results.append({
-                "model": model,
+                "model": model_name,
                 "material_group": material_group,
                 "test_month": test_month,
                 "actual": actual,
@@ -100,7 +101,4 @@ for model, predict_next_month in models.items():
                 **meta,
             })
 
-    results_df = pd.DataFrame(results).sort_values(['test_month', 'material_group']).round(3)
-    print(results_df.to_string(index=False, col_space={'model': 7}), end="\n\n")
-    results_df.to_excel(f'predictions/{model}.xlsx', index=False)
-    results_df.to_csv(f'predictions/{model}.csv', index=False)
+    save_results(model_name, results)

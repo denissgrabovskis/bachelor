@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 
 import timber_sqlite
+from log import save_results
 
 warnings.filterwarnings("ignore")
 
@@ -21,8 +22,6 @@ HIDDEN_STATE_SIZE = 16
 
 EPOCHS = 400
 LEARNING_RATE = 0.01
-
-AUGMENT_DATA=True
 
 
 def build_windows(groups_features_by_periods, train_start, train_end, augment_data=False):
@@ -176,52 +175,50 @@ groups_features_by_periods = timber_sqlite.get_groups_with_summed(
         ]
 )
 
-
-results = []
-for train_start, train_end, test_month in train_splits:
-    x, groups_id, y = build_windows(
-        groups_features_by_periods=groups_features_by_periods,
-        train_start=train_start,
-        train_end=train_end,
-        augment_data=AUGMENT_DATA
-    )
-
-    x, x_mean, x_std = standardize(x)
-    y, y_mean, y_std = standardize(y)
-
-    # create new model each for each test
-    model = train_model(x=x, groups_ids=groups_id, y=y)
-
-    for material_group, group_id, group_periods in groups_features_by_periods:
-        actual = group_periods.loc[test_month]['sale_m3']
-
-        prediction = predict_next_month(
-            model=model,
-            group_id=group_id,
-            periods=group_periods[train_start:train_end],
-            x_standardize = lambda x: standardize(x, x_mean, x_std)[0],
-            y_unstandardize = lambda y: (y * y_std + y_mean)[0, 0],
+def train_and_predict(model_name, augment_data):
+    results = []
+    for train_start, train_end, test_month in train_splits:
+        x, groups_id, y = build_windows(
+            groups_features_by_periods=groups_features_by_periods,
+            train_start=train_start,
+            train_end=train_end,
+            augment_data=augment_data
         )
 
-        abs_error = abs(actual - prediction)
-        sq_error = (actual - prediction) ** 2
-        ape = abs((actual - prediction) / actual) if actual != 0 else None
+        x, x_mean, x_std = standardize(x)
+        y, y_mean, y_std = standardize(y)
 
-        results.append({
-            "model": "LSTM",
-            "material_group": material_group,
-            "test_month": test_month,
-            "actual": actual,
-            "prediction": prediction,
-            "abs_error": abs_error,
-            "sq_error": sq_error,
-            "ape": ape,
-        })
+        # create new model each for each test
+        model = train_model(x=x, groups_ids=groups_id, y=y)
 
-results_df = pd.DataFrame(results).sort_values(['test_month', 'material_group']).round(3)
-print(results_df.to_string(index=False, col_space={'model': 7}), end="\n\n")
-model = 'lstm-augmented' if AUGMENT_DATA else 'lstm'
-results_df.to_excel(f'predictions/{model}.xlsx', index=False)
-results_df.to_csv(f'predictions/{model}.csv', index=False)
+        for material_group, group_id, group_periods in groups_features_by_periods:
+            actual = group_periods.loc[test_month]['sale_m3']
+
+            prediction = predict_next_month(
+                model=model,
+                group_id=group_id,
+                periods=group_periods[train_start:train_end],
+                x_standardize = lambda x: standardize(x, x_mean, x_std)[0],
+                y_unstandardize = lambda y: (y * y_std + y_mean)[0, 0],
+            )
+
+            abs_error = abs(actual - prediction)
+            sq_error = (actual - prediction) ** 2
+            ape = abs((actual - prediction) / actual) if actual != 0 else None
+
+            results.append({
+                "model": model_name.upper(),
+                "material_group": material_group,
+                "test_month": test_month,
+                "actual": actual,
+                "prediction": prediction,
+                "abs_error": abs_error,
+                "sq_error": sq_error,
+                "ape": ape,
+            })
+
+    save_results(model_name, results)
 
 
+train_and_predict('lstm', False)
+train_and_predict('lstm-augmented', True)
